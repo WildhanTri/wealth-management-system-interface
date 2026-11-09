@@ -119,6 +119,16 @@ export const FinancialPlanningTab: React.FC<FinancialPlanningTabProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '22px', paddingBottom: '32px' }}>
+      {/* Page Content Header */}
+      <div>
+        <h2 style={{ fontSize: '22px', color: 'var(--text-primary)', fontWeight: 800 }}>
+          Financial Planning &amp; Targets
+        </h2>
+        <p style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+          Revenue streams, monthly fixed commitments, targets &amp; debt settlement
+        </p>
+      </div>
+
       {/* ========================================================================= */}
       {/* 1. EXECUTIVE CASH FLOW & HEALTH RADAR (MASTER SUMMARY)                     */}
       {/* ========================================================================= */}

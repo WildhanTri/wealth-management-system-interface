@@ -275,7 +275,7 @@ export const RecordDebtPaymentModal: React.FC<RecordDebtPaymentModalProps> = ({
               {isSettlingFull && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 800, color: 'var(--emerald)' }}>
                   <CheckCircle2 size={14} />
-                  <span>🎉 This payment will completely settle and clear this debt!</span>
+                  <span>This payment will completely settle and clear this debt!</span>
                 </div>
               )}
             </div>

@@ -261,7 +261,7 @@ export const AddDebtModal: React.FC<AddDebtModalProps> = ({
             <input
               type="text"
               className="form-input"
-              placeholder="e.g. Mandiri Signature Card, KPR Grand Wisata, Cicilan Vario"
+              placeholder="e.g. Signature Credit Card, Home Mortgage, Vehicle Installment"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required

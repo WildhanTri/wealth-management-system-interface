@@ -922,7 +922,7 @@ export const DebtView: React.FC = () => {
                         }}
                       >
                         <CheckCircle2 size={15} />
-                        <span>🎉 Fully Settled & Debt-Free!</span>
+                        <span>Fully Settled & Debt-Free!</span>
                       </div>
                     </div>
                   )}

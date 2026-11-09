@@ -120,6 +120,11 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
   const [displayValue, setDisplayValue] = useState<string>(() => formatNumberToDisplay(value));
   const pendingCursorPos = useRef<number | null>(null);
 
+  // Strip redundant currency prefixes from placeholder if prefix prop is already displayed
+  const sanitizedPlaceholder = prefix
+    ? placeholder.replace(/^Rp\.?\s*/i, '') || '0'
+    : placeholder;
+
   // Sync displayValue with external value changes when not actively typing partial decimals
   useEffect(() => {
     const formatted = formatNumberToDisplay(value);
@@ -351,7 +356,7 @@ export const CurrencyInput: React.FC<CurrencyInputProps> = ({
               setDisplayValue(displayValue.slice(0, -1));
             }
           }}
-          placeholder={placeholder}
+          placeholder={sanitizedPlaceholder}
           disabled={disabled}
           style={{
             flex: 1,

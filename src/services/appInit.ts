@@ -36,11 +36,11 @@ export async function initializeAppState(): Promise<AppInitState> {
   try {
     const health = await apiService.checkHealth();
     if (!health.success) {
-      console.warn('⚠️ Crescent Wealth Backend API is currently unreachable.');
+      console.warn('[Crescent] Backend API is currently unreachable.');
       return createEmptyState(false);
     }
 
-    console.log('📡 Connected to Crescent Wealth Core Backend API (PostgreSQL)');
+    console.log('[Crescent] Connected to Core Backend API (PostgreSQL)');
 
     // Fetch all entities concurrently from backend
     const [
@@ -91,6 +91,7 @@ export async function initializeAppState(): Promise<AppInitState> {
       date: t.date,
       emotionalTrigger: t.emotionalTrigger || t.emotional_trigger || 'Need',
       isImpulse: Boolean(t.isImpulse ?? t.is_impulse),
+      displayOrder: Number(t.displayOrder ?? t.display_order) || 0,
     }));
 
     const plannedExpenses: PlannedExpense[] = (plansRes.data || []).map((p: any) => ({
@@ -140,7 +141,9 @@ export async function initializeAppState(): Promise<AppInitState> {
     const financialTargets: FinancialTargetItem[] = (targetRes.data || []).map((t: any) => ({
       id: t.id,
       name: t.name,
-      category: t.category || 'emergency_fund',
+      targetType: t.targetType || t.target_type || 'needs',
+      timeframe: t.timeframe || 'short_term',
+      category: t.category || 'other_needs_short',
       targetAmount: Number(t.targetAmount || t.target_amount) || 0,
       currentAmount: Number(t.currentAmount || t.current_amount) || 0,
       deadlineDate: t.deadlineDate || t.deadline_date,

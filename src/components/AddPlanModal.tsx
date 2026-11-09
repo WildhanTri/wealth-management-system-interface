@@ -471,9 +471,20 @@ export const AddPlanModal: React.FC<AddPlanModalProps> = ({
                       transition: 'all 0.2s',
                     }}
                   >
-                    {opt.value === 'high' && '🔴 High'}
-                    {opt.value === 'medium' && '🟡 Medium'}
-                    {opt.value === 'low' && '🟢 Flexible'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <span
+                        style={{
+                          width: '7px',
+                          height: '7px',
+                          borderRadius: '50%',
+                          background: opt.value === 'high' ? 'var(--rose)' : opt.value === 'medium' ? 'var(--amber)' : 'var(--primary)',
+                          display: 'inline-block',
+                        }}
+                      />
+                      {opt.value === 'high' && 'High'}
+                      {opt.value === 'medium' && 'Medium'}
+                      {opt.value === 'low' && 'Flexible'}
+                    </span>
                   </button>
                 );
               })}

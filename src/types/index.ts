@@ -49,6 +49,7 @@ export interface TransactionItem {
   date: string;
   emotionalTrigger: EmotionalTrigger;
   isImpulse: boolean;
+  displayOrder?: number;
 }
 
 export interface QuarantineItem {
@@ -131,6 +132,8 @@ export interface FixedCostItem {
   dueDay: number; // 1-31
   notes?: string;
   currentMonth?: string; // YYYY-MM
+  startMonth?: string | null; // YYYY-MM
+  endMonth?: string | null; // YYYY-MM
   isPaid?: boolean;
   paidAmount?: number;
   paidAt?: string | null;
@@ -160,16 +163,35 @@ export interface FixedCostHistoryItem {
   settlementRate?: number;
 }
 
+export type TargetType = 'needs' | 'wants';
+export type TargetTimeframe = 'short_term' | 'long_term';
+
 export type TargetCategory =
-  | 'emergency_fund'
+  // Kebutuhan (Needs) - Jangka Pendek
+  | 'vehicle_maintenance'
+  | 'home_maintenance'
+  | 'medical_health'
+  | 'tax_bill'
+  | 'other_needs_short'
+  // Kebutuhan (Needs) - Jangka Panjang
   | 'property'
-  | 'vehicle'
-  | 'investment'
+  | 'emergency_fund'
   | 'education'
-  | 'travel'
-  | 'gadget'
-  | 'wedding'
   | 'retirement'
+  | 'other_needs_long'
+  // Keinginan (Wants) - Jangka Pendek
+  | 'gadget'
+  | 'shopping'
+  | 'entertainment'
+  | 'hobby'
+  | 'other_wants_short'
+  // Keinginan (Wants) - Jangka Panjang
+  | 'travel'
+  | 'vehicle'
+  | 'wedding'
+  | 'investment'
+  | 'other_wants_long'
+  // Legacy / fallback
   | 'other';
 
 export type TargetPriority = 'high' | 'medium' | 'low';
@@ -178,6 +200,8 @@ export type TargetStatus = 'in_progress' | 'completed' | 'paused';
 export interface FinancialTargetItem {
   id: string;
   name: string;
+  targetType?: TargetType;
+  timeframe?: TargetTimeframe;
   category: TargetCategory;
   targetAmount: number;
   currentAmount: number;

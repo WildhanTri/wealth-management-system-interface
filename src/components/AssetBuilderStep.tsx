@@ -16,6 +16,7 @@ import {
   Plus,
   Layers,
   X,
+  AlertCircle,
 } from 'lucide-react';
 
 interface AssetBuilderStepProps {
@@ -178,19 +179,28 @@ export const AssetBuilderStep: React.FC<AssetBuilderStepProps> = ({ assets, onCh
           }}
         >
           <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>🟢 Cash Buffer</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--primary)', display: 'inline-block' }} />
+              Cash Buffer
+            </div>
             <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif', marginTop: '2px' }} className="tabular-nums">
               {formatRupiah(totalCash)}
             </div>
           </div>
           <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>🟠 Hard Assets</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--amber)', display: 'inline-block' }} />
+              Hard Assets
+            </div>
             <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif', marginTop: '2px' }} className="tabular-nums">
               {formatRupiah(totalHard)}
             </div>
           </div>
           <div>
-            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>🟣 Investments</div>
+            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8b5cf6', display: 'inline-block' }} />
+              Investments
+            </div>
             <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif', marginTop: '2px' }} className="tabular-nums">
               {formatRupiah(totalInvestment)}
             </div>
@@ -610,8 +620,9 @@ export const AssetBuilderStep: React.FC<AssetBuilderStepProps> = ({ assets, onCh
                 </div>
 
                 {formError && (
-                  <div style={{ fontSize: '12px', color: 'var(--rose)', fontWeight: 600, padding: '4px 0' }}>
-                    ⚠️ {formError}
+                  <div style={{ fontSize: '12px', color: 'var(--rose)', fontWeight: 600, padding: '4px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <AlertCircle size={14} />
+                    <span>{formError}</span>
                   </div>
                 )}
               </div>

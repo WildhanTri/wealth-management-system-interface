@@ -73,7 +73,10 @@ export const planningSlice = createSlice({
     addFixedCost: (state, action: PayloadAction<FixedCostItem>) => {
       state.fixedCosts.push(action.payload);
     },
-    updateFixedCostInState: (state, action: PayloadAction<FixedCostItem>) => {
+    updateFixedCostInState: (
+      state,
+      action: PayloadAction<Partial<FixedCostItem> & { id: string }>
+    ) => {
       const idx = state.fixedCosts.findIndex((c) => c.id === action.payload.id);
       if (idx !== -1) {
         state.fixedCosts[idx] = { ...state.fixedCosts[idx], ...action.payload };

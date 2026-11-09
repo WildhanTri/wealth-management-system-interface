@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { calculateFinancials, formatRupiah } from '../../utils/financialCalculations';
 import { removeAsset, reorderAssets } from '../../store/slices/assetSlice';
@@ -27,6 +27,8 @@ import {
   LineChart,
   Search,
   X,
+  Lightbulb,
+  MessageSquare,
 } from 'lucide-react';
 import { AssetItem, AssetSnapshot } from '../../types';
 import { AssetSnapshotModal } from '../AssetSnapshotModal';
@@ -324,6 +326,77 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
     return b.createdAt - a.createdAt;
   });
 
+  // Filter snapshot valuation dynamically based on active 5-way holding filters
+  const getSnapshotFilteredValue = (snap: AssetSnapshot): number => {
+    if (activeFilters.size === 5) return snap.totalNetWorth;
+    if (activeFilters.size === 0) return 0;
+
+    if (Array.isArray(snap.items) && snap.items.length > 0) {
+      let sum = 0;
+      snap.items.forEach((item) => {
+        if (item.assetClass === 'cash_equivalent' && activeFilters.has('cash')) {
+          sum += Number(item.estimatedValue) || 0;
+        } else if (item.assetClass === 'hard_asset_movable' || item.assetClass === 'hard_asset_immovable') {
+          const isAppr = isAssetAppreciating(item);
+          if (isAppr && activeFilters.has('hard_appreciating')) {
+            sum += Number(item.estimatedValue) || 0;
+          } else if (!isAppr && activeFilters.has('hard_depreciating')) {
+            sum += Number(item.estimatedValue) || 0;
+          }
+        } else if (item.assetClass === 'investment') {
+          const isCrypto = isAssetCrypto(item);
+          if (!isCrypto && activeFilters.has('market_stock')) {
+            sum += Number(item.estimatedValue) || 0;
+          } else if (isCrypto && activeFilters.has('market_crypto')) {
+            sum += Number(item.estimatedValue) || 0;
+          }
+        }
+      });
+      return sum;
+    }
+
+    // Fallback if snap.items is not populated:
+    let sum = 0;
+    if (activeFilters.has('cash')) sum += snap.totalCash || 0;
+    if (activeFilters.has('hard_appreciating') || activeFilters.has('hard_depreciating')) {
+      const hardCount = (activeFilters.has('hard_appreciating') ? 1 : 0) + (activeFilters.has('hard_depreciating') ? 1 : 0);
+      sum += (snap.totalHard || 0) * (hardCount / 2);
+    }
+    if (activeFilters.has('market_stock') || activeFilters.has('market_crypto')) {
+      const invCount = (activeFilters.has('market_stock') ? 1 : 0) + (activeFilters.has('market_crypto') ? 1 : 0);
+      sum += (snap.totalInvestment || 0) * (invCount / 2);
+    }
+    return Math.round(sum);
+  };
+
+  // Construct trajectory snapshots including real-time live holding valuation as latest anchor
+  const effectiveSnapshots: AssetSnapshot[] = useMemo(() => {
+    const todayISO = new Date().toISOString().split('T')[0];
+    const livePoint: AssetSnapshot = {
+      id: 'live-current',
+      snapshotDate: todayISO,
+      totalNetWorth: filteredNetWorth,
+      totalCash: filteredCashTotal,
+      totalHard: filteredHardTotal,
+      totalInvestment: filteredInvestmentTotal,
+      items: assets.filter(isCardCounted),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      notes: 'Current live portfolio valuation',
+    };
+
+    if (snapshots.length === 0) {
+      return [livePoint];
+    }
+
+    const sorted = [...snapshots].sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate));
+    const lastSnap = sorted[sorted.length - 1];
+    if (lastSnap.snapshotDate < todayISO) {
+      return [...sorted, livePoint];
+    }
+    return sorted;
+  }, [snapshots, filteredNetWorth, filteredCashTotal, filteredHardTotal, filteredInvestmentTotal, assets, excludedAssetIds]);
+
   // Helper date formatter in English: "October 30, 2026"
   const formatDateEn = (isoDate: string) => {
     try {
@@ -601,7 +674,7 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: activeFilters.has('hard_appreciating') ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Hard Assets (Appresiatif)
+                    Hard Assets (Appreciating)
                   </div>
                   <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
                     {allHardAppreciating.length} items &bull; {formatRupiah(totalHardApprVal)}
@@ -611,7 +684,7 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
               <TrendingUp size={16} color={activeFilters.has('hard_appreciating') ? 'var(--emerald)' : 'var(--text-muted)'} style={{ flexShrink: 0 }} />
             </button>
 
-            {/* 3. Hard Physical Assets (Depresiatif) */}
+            {/* 3. Hard Physical Assets (Depreciating) */}
             <button
               type="button"
               onClick={() => toggleFilter('hard_depreciating')}
@@ -647,7 +720,7 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '12px', fontWeight: 700, color: activeFilters.has('hard_depreciating') ? 'var(--text-primary)' : 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    Hard Assets (Depresiatif)
+                    Hard Assets (Depreciating)
                   </div>
                   <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
                     {allHardDepreciating.length} items &bull; {formatRupiah(totalHardDeprVal)}
@@ -902,6 +975,28 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
       {/* VIEW 1: ACTIVE ASSETS */}
       {activeView === 'active_assets' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          {/* Dynamic Portfolio Valuation Trajectory Line Chart */}
+          <AssetGrowthLineChart
+            snapshots={effectiveSnapshots}
+            getValue={getSnapshotFilteredValue}
+            filterLabel={isFiltered ? `Filtered (${visibleAssetsCount} holdings)` : 'All Asset Classes'}
+            title="Portfolio Valuation Trajectory"
+            subtitle={
+              isFiltered
+                ? `Dynamic trajectory reflecting active categories: ${[
+                    activeFilters.has('cash') ? 'Cash' : null,
+                    activeFilters.has('hard_appreciating') ? 'Hard (Appreciating)' : null,
+                    activeFilters.has('hard_depreciating') ? 'Hard (Depreciating)' : null,
+                    activeFilters.has('market_stock') ? 'Stock' : null,
+                    activeFilters.has('market_crypto') ? 'Crypto' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}`
+                : 'Consolidated balance sheet momentum across all valuation records'
+            }
+            onOpenSnapshotModal={handleOpenNewSnapshot}
+          />
+
           {/* Active Holdings Control & Quick Card Filter Bar */}
           <div
             style={{
@@ -1825,7 +1920,12 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
         <div className="bento-grid" style={{ alignItems: 'start' }}>
           {/* Left Column: Growth Chart (Sticky) */}
           <div className="col-span-5" style={{ display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '88px' }}>
-            <AssetGrowthLineChart snapshots={snapshots} onOpenSnapshotModal={handleOpenNewSnapshot} />
+            <AssetGrowthLineChart
+              snapshots={effectiveSnapshots}
+              getValue={getSnapshotFilteredValue}
+              filterLabel={isFiltered ? `Filtered (${visibleAssetsCount} holdings)` : 'All Asset Classes'}
+              onOpenSnapshotModal={handleOpenNewSnapshot}
+            />
 
             <div
               className="glass"
@@ -1837,8 +1937,9 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
                 boxShadow: 'var(--shadow-sm)',
               }}
             >
-              <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px' }}>
-                💡 Valuation Discipline Recommendation
+              <h4 style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Lightbulb size={16} color="var(--primary)" />
+                <span>Valuation Discipline Recommendation</span>
               </h4>
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                 Record portfolio valuations on a regular schedule (e.g. at month-end or paydays). This objectively captures long-term wealth momentum without emotional daily market noise.
@@ -1980,8 +2081,9 @@ export const AssetTab: React.FC<AssetTabProps> = ({ onOpenAddAsset }) => {
                             {formatDateEn(snap.snapshotDate)}
                           </div>
                           {snap.notes && (
-                            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px', fontStyle: 'italic' }}>
-                              💬 {snap.notes}
+                            <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)', marginTop: '2px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <MessageSquare size={12} color="var(--text-muted)" />
+                              <span>{snap.notes}</span>
                             </div>
                           )}
                         </div>

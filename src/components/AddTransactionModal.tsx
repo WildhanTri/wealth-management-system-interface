@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppDispatch, useAppSelector } from '../store';
-import { addTransaction } from '../store/slices/transactionSlice';
+import { addTransaction, updateTransaction } from '../store/slices/transactionSlice';
 import { calculateFinancials, formatRupiah } from '../utils/financialCalculations';
-import { X, Tag, Sparkles, Check, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight, DollarSign } from 'lucide-react';
+import { X, Tag, Sparkles, Check, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight, DollarSign, Pencil, AlertCircle } from 'lucide-react';
 import { TransactionItem, TransactionType } from '../types';
 import { apiService } from '../services/apiService';
 import { CustomSelect } from './CustomSelect';
@@ -13,6 +13,7 @@ interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialType?: TransactionType;
+  transactionToEdit?: TransactionItem | null;
 }
 
 const EXPENSE_CATEGORIES = [
@@ -40,6 +41,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   isOpen,
   onClose,
   initialType = 'expense',
+  transactionToEdit = null,
 }) => {
   const dispatch = useAppDispatch();
   const profile = useAppSelector((state) => state.user.profile);
@@ -51,6 +53,21 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   // Form State: Type, Title, Category, Date (default today), Amount, Linked Asset
   const getTodayISO = () => new Date().toISOString().split('T')[0];
 
+  const parseToDateInput = (val?: string) => {
+    if (!val || val.toLowerCase() === 'today') return getTodayISO();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+    return getTodayISO();
+  };
+
+  const isEditing = Boolean(transactionToEdit);
+
   const [txType, setTxType] = useState<TransactionType>(initialType);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState(
@@ -58,16 +75,35 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   );
   const [date, setDate] = useState(getTodayISO());
   const [amount, setAmount] = useState<number | ''>('');
+  const [isImpulse, setIsImpulse] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string>('');
   const [error, setError] = useState('');
 
-  // Sync initialType when modal opens
+  // Sync state when modal opens or transactionToEdit changes
   useEffect(() => {
     if (isOpen) {
-      setTxType(initialType);
-      setCategory(initialType === 'income' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]);
+      if (transactionToEdit) {
+        const type = transactionToEdit.type || 'expense';
+        setTxType(type);
+        setTitle(transactionToEdit.title || '');
+        setCategory(transactionToEdit.category || (type === 'income' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]));
+        setDate(parseToDateInput(transactionToEdit.date));
+        setAmount(transactionToEdit.amount || '');
+        setIsImpulse(Boolean(transactionToEdit.isImpulse));
+        setSelectedAssetId('');
+        setError('');
+      } else {
+        setTxType(initialType);
+        setTitle('');
+        setAmount('');
+        setDate(getTodayISO());
+        setCategory(initialType === 'income' ? INCOME_CATEGORIES[0] : EXPENSE_CATEGORIES[0]);
+        setIsImpulse(false);
+        setSelectedAssetId('');
+        setError('');
+      }
     }
-  }, [isOpen, initialType]);
+  }, [isOpen, initialType, transactionToEdit]);
 
   // Close on Escape
   useEffect(() => {
@@ -143,7 +179,44 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     }
 
     const txDate = date || getTodayISO();
-    const displayDate = formatDateForDisplay(txDate);
+
+    if (isEditing && transactionToEdit) {
+      const updatedTx: TransactionItem = {
+        ...transactionToEdit,
+        title: trimmedTitle,
+        type: txType,
+        amount: numericAmount,
+        category,
+        date: txDate,
+        isImpulse: isIncome ? false : isImpulse,
+        emotionalTrigger: isIncome
+          ? 'Need'
+          : isImpulse
+          ? transactionToEdit.emotionalTrigger && transactionToEdit.emotionalTrigger !== 'Need'
+            ? transactionToEdit.emotionalTrigger
+            : 'FOMO'
+          : 'Need',
+      };
+
+      dispatch(updateTransaction(updatedTx));
+
+      apiService
+        .updateTransaction(transactionToEdit.id, {
+          name: trimmedTitle,
+          type: txType,
+          amount: numericAmount,
+          category,
+          date: txDate,
+          isImpulse: isIncome ? false : isImpulse,
+          emotionalTrigger: updatedTx.emotionalTrigger,
+        })
+        .catch((err) => {
+          console.error('Failed to update transaction via API:', err);
+        });
+
+      onClose();
+      return;
+    }
 
     const newTx: TransactionItem = {
       id: `tx-${Date.now()}`,
@@ -151,9 +224,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
       type: txType,
       amount: numericAmount,
       category,
-      date: displayDate,
-      emotionalTrigger: 'Need',
-      isImpulse: false,
+      date: txDate,
+      emotionalTrigger: isIncome ? 'Need' : isImpulse ? 'FOMO' : 'Need',
+      isImpulse: isIncome ? false : isImpulse,
     };
 
     apiService
@@ -163,8 +236,8 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         amount: numericAmount,
         category,
         date: txDate,
-        emotionalTrigger: 'Need',
-        isImpulse: false,
+        emotionalTrigger: newTx.emotionalTrigger,
+        isImpulse: newTx.isImpulse,
       })
       .then((res) => {
         if (res.success && res.data) {
@@ -189,6 +262,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     setAmount('');
     setDate(getTodayISO());
     setCategory(EXPENSE_CATEGORIES[0]);
+    setIsImpulse(false);
     setSelectedAssetId('');
     setError('');
     onClose();
@@ -263,14 +337,30 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 color: isIncome ? 'var(--primary)' : 'var(--rose)',
               }}
             >
-              {isIncome ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
+              {isEditing ? (
+                <Pencil size={17} />
+              ) : isIncome ? (
+                <ArrowDownLeft size={18} />
+              ) : (
+                <ArrowUpRight size={18} />
+              )}
             </div>
             <div>
               <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>
-                {isIncome ? 'Record Cash Inflow' : 'Record Cash Outflow'}
+                {isEditing
+                  ? isIncome
+                    ? 'Edit Cash Inflow'
+                    : 'Edit Cash Outflow'
+                  : isIncome
+                  ? 'Record Cash Inflow'
+                  : 'Record Cash Outflow'}
               </h3>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                {isIncome ? 'Log asset sales, bonuses, or extra revenue' : 'Log daily expenses and discretionary outflows'}
+                {isEditing
+                  ? 'Update transaction details and classification'
+                  : isIncome
+                  ? 'Log asset sales, bonuses, or extra revenue'
+                  : 'Log daily expenses and discretionary outflows'}
               </span>
             </div>
           </div>
@@ -293,68 +383,70 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           </button>
         </div>
 
-        {/* Transaction Type Segmented Switch */}
-        <div style={{ padding: '14px 20px 0 20px' }}>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
-              background: 'var(--bg-app)',
-              padding: '4px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--border-light)',
-              gap: '4px',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => handleTypeChange('expense')}
+        {/* Transaction Type Segmented Switch (Only shown if editing an existing income transaction) */}
+        {isEditing && transactionToEdit?.type === 'income' && (
+          <div style={{ padding: '14px 20px 0 20px' }}>
+            <div
               style={{
-                padding: '8px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                fontSize: '12.5px',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                background: !isIncome ? '#FFFFFF' : 'transparent',
-                color: !isIncome ? 'var(--rose)' : 'var(--text-secondary)',
-                boxShadow: !isIncome ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                background: 'var(--bg-app)',
+                padding: '4px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-light)',
+                gap: '4px',
               }}
             >
-              <TrendingDown size={15} />
-              <span>Expense / Outflow</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange('expense')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  background: !isIncome ? '#FFFFFF' : 'transparent',
+                  color: !isIncome ? 'var(--rose)' : 'var(--text-secondary)',
+                  boxShadow: !isIncome ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                <TrendingDown size={15} />
+                <span>Expense / Outflow</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => handleTypeChange('income')}
-              style={{
-                padding: '8px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: 'none',
-                fontSize: '12.5px',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                background: isIncome ? '#FFFFFF' : 'transparent',
-                color: isIncome ? 'var(--primary)' : 'var(--text-secondary)',
-                boxShadow: isIncome ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-              }}
-            >
-              <TrendingUp size={15} />
-              <span>Income / Inflow</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleTypeChange('income')}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  background: isIncome ? '#FFFFFF' : 'transparent',
+                  color: isIncome ? 'var(--primary)' : 'var(--text-secondary)',
+                  boxShadow: isIncome ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                <TrendingUp size={15} />
+                <span>Income / Inflow</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} style={{ margin: 0 }}>
@@ -520,6 +612,31 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               />
             </div>
 
+            {/* Impulsive Expense Toggle */}
+            {!isIncome && (
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  cursor: 'pointer',
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)',
+                  userSelect: 'none',
+                  padding: '4px 0',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isImpulse}
+                  onChange={(e) => setIsImpulse(e.target.checked)}
+                  style={{ accentColor: 'var(--rose)', width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span>Mark as Impulsive / Unplanned spending</span>
+              </label>
+            )}
+
             {/* Dynamic Helper Note */}
             {numericAmount > 0 && !isIncome && fin.hourlyWage > 0 && (
               <div
@@ -562,8 +679,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             )}
 
             {error && (
-              <div style={{ fontSize: '12px', color: 'var(--rose)', fontWeight: 600, padding: '2px 0' }}>
-                ⚠️ {error}
+              <div style={{ fontSize: '12px', color: 'var(--rose)', fontWeight: 600, padding: '2px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertCircle size={14} />
+                <span>{error}</span>
               </div>
             )}
           </div>
@@ -620,7 +738,11 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               }}
             >
               <Check size={16} strokeWidth={2.6} />
-              {isIncome ? 'Save Inflow' : 'Save Expense'}
+              {isEditing
+                ? 'Save Changes'
+                : isIncome
+                ? 'Save Inflow'
+                : 'Save Expense'}
             </button>
           </div>
         </form>

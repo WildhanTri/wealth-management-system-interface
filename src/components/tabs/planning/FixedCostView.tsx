@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '../../../store';
 import {
   CalendarCheck,
@@ -19,22 +19,28 @@ import {
   Layers,
   Edit2,
   Trash2,
-  BarChart3,
+  Repeat,
   Calendar,
   GripVertical,
+  AlertCircle,
+  Sparkles,
 } from 'lucide-react';
-import { FixedCostItem, FixedCostCategory } from '../../../types';
+import { FixedCostItem, FixedCostCategory, TransactionItem } from '../../../types';
 import { formatRupiah } from '../../../utils/financialCalculations';
 import { apiService } from '../../../services/apiService';
 import {
   setFixedCosts,
   removeFixedCost,
   reorderFixedCosts,
+  updateFixedCostInState,
   updateFixedCostPaymentInState,
   setSelectedMonth,
   setFixedCostHistory,
 } from '../../../store/slices/planningSlice';
+import { addTransaction } from '../../../store/slices/transactionSlice';
 import { AddFixedCostModal } from '../../planning/AddFixedCostModal';
+import { ConfirmFixedCostPaymentModal } from '../../planning/ConfirmFixedCostPaymentModal';
+import { ReplaceFixedCostModal } from '../../planning/ReplaceFixedCostModal';
 
 const CATEGORY_META: Record<
   FixedCostCategory,
@@ -90,6 +96,12 @@ const CATEGORY_META: Record<
   },
 };
 
+const TIMEFRAME_OPTIONS: { id: '6M' | '1Y' | 'ALL'; label: string }[] = [
+  { id: '6M', label: '6 Months' },
+  { id: '1Y', label: '1 Year' },
+  { id: 'ALL', label: 'All Time' },
+];
+
 export const FixedCostView: React.FC = () => {
   const dispatch = useAppDispatch();
   const fixedCosts = useAppSelector((state) => state.planning.fixedCosts);
@@ -99,12 +111,32 @@ export const FixedCostView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | FixedCostCategory>('all');
   const [paymentFilter, setPaymentFilter] = useState<'all' | 'paid' | 'pending'>('all');
-  const [showHistoryDrawer, setShowHistoryDrawer] = useState(false);
+  const [historyTimeframe, setHistoryTimeframe] = useState<'6M' | '1Y' | 'ALL'>('6M');
   const [_isLoading, setIsLoading] = useState(false);
+  const historyScrollRef = useRef<HTMLDivElement>(null);
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [costToEdit, setCostToEdit] = useState<FixedCostItem | null>(null);
+  const [settlingCost, setSettlingCost] = useState<FixedCostItem | null>(null);
+  const [costToReplace, setCostToReplace] = useState<FixedCostItem | null>(null);
+
+  const mapFixedCostCategoryToLedger = (cat: FixedCostCategory): string => {
+    switch (cat) {
+      case 'subscriptions':
+      case 'memberships':
+        return 'Entertainment & Lifestyle';
+      case 'insurance':
+        return 'Healthcare & Medical';
+      case 'utilities':
+      case 'telecom':
+      case 'housing':
+      case 'debt_installments':
+      case 'other':
+      default:
+        return 'Bills & Utilities';
+    }
+  };
 
   // Drag and drop state
   const [draggedCostId, setDraggedCostId] = useState<string | null>(null);
@@ -167,6 +199,13 @@ export const FixedCostView: React.FC = () => {
   const isCurrentMonth = selectedMonth === currentMonthStr;
   const currentDay = currentDate.getDate();
 
+  // Maximum allowed future month (up to 1 month ahead only)
+  const maxFutureDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
+  const maxAllowedMonthStr = `${maxFutureDate.getFullYear()}-${String(
+    maxFutureDate.getMonth() + 1
+  ).padStart(2, '0')}`;
+  const isAtMaxMonth = selectedMonth >= maxAllowedMonthStr;
+
   // Load costs for selected month
   const loadMonthData = async (monthStr: string) => {
     try {
@@ -183,15 +222,22 @@ export const FixedCostView: React.FC = () => {
   };
 
   // Load history data
-  const loadHistoryData = async () => {
+  const loadHistoryData = async (timeframe?: '6M' | '1Y' | 'ALL') => {
     try {
-      const res = await apiService.getFixedCostHistory(6);
+      const activeTf = timeframe ?? historyTimeframe;
+      const param = activeTf === '6M' ? 6 : activeTf === '1Y' ? 12 : 'all';
+      const res = await apiService.getFixedCostHistory(param);
       if (res.success && res.data) {
         dispatch(setFixedCostHistory(res.data));
       }
     } catch (err) {
       console.error('Failed to load fixed cost history:', err);
     }
+  };
+
+  const handleTimeframeChange = (tf: '6M' | '1Y' | 'ALL') => {
+    setHistoryTimeframe(tf);
+    loadHistoryData(tf);
   };
 
   // Month navigation handlers
@@ -206,11 +252,13 @@ export const FixedCostView: React.FC = () => {
   };
 
   const handleNextMonth = () => {
+    if (isAtMaxMonth) return;
     const nextDate = new Date(year, month, 1);
     const newMonthStr = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(
       2,
       '0'
     )}`;
+    if (newMonthStr > maxAllowedMonthStr) return;
     dispatch(setSelectedMonth(newMonthStr));
     loadMonthData(newMonthStr);
   };
@@ -223,59 +271,186 @@ export const FixedCostView: React.FC = () => {
   };
 
   useEffect(() => {
-    loadMonthData(selectedMonth);
+    const targetMonth = selectedMonth > maxAllowedMonthStr ? currentMonthStr : selectedMonth;
+    if (targetMonth !== selectedMonth) {
+      dispatch(setSelectedMonth(targetMonth));
+    }
+    loadMonthData(targetMonth);
     loadHistoryData();
   }, []);
 
-  // Payment toggle handler
+  // Smooth scroll selected month into view in historical strip
+  useEffect(() => {
+    if (historyScrollRef.current) {
+      const selectedEl = historyScrollRef.current.querySelector<HTMLElement>('[data-selected="true"]');
+      if (selectedEl) {
+        selectedEl.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }
+  }, [selectedMonth, fixedCostHistory]);
+
+  // Payment toggle handler:
+  // If not paid: open confirmation modal to enter actual exact amount & record to cash flow ledger
+  // If already paid: prompt to unmark / revert
   const handleTogglePaid = async (cost: FixedCostItem) => {
-    const newStatus = !cost.isPaid;
+    if (!cost.isPaid) {
+      setSettlingCost(cost);
+      return;
+    }
+
+    // If currently paid, allow reverting to unpaid
+    if (
+      !window.confirm(
+        `Mark "${cost.name}" as unpaid for ${formattedMonthName}?\n\nThis will reset the bill settlement status to pending.`
+      )
+    ) {
+      return;
+    }
+
     dispatch(
       updateFixedCostPaymentInState({
         id: cost.id,
-        isPaid: newStatus,
-        paidAmount: newStatus ? cost.amount : 0,
-        paidAt: newStatus ? new Date().toISOString() : null,
+        isPaid: false,
+        paidAmount: 0,
+        paidAt: null,
       })
     );
 
     try {
-      const res = await apiService.toggleFixedCostPaid(cost.id, {
+      await apiService.toggleFixedCostPaid(cost.id, {
         monthYear: selectedMonth,
-        isPaid: newStatus,
-        paidAmount: newStatus ? cost.amount : 0,
+        isPaid: false,
+        paidAmount: 0,
       });
-      if (res.success && res.data) {
-        dispatch(
-          updateFixedCostPaymentInState({
-            id: cost.id,
-            isPaid: res.data.isPaid,
-            paidAmount: res.data.paidAmount,
-            paidAt: res.data.paidAt ?? null,
-          })
-        );
-      }
       loadHistoryData();
     } catch (err) {
-      console.error('Failed to toggle payment status:', err);
+      console.error('Failed to unmark payment status:', err);
       dispatch(
         updateFixedCostPaymentInState({
           id: cost.id,
-          isPaid: !newStatus,
-          paidAmount: !newStatus ? cost.amount : 0,
-          paidAt: null,
+          isPaid: true,
+          paidAmount: cost.paidAmount || cost.amount,
+          paidAt: cost.paidAt || null,
         })
       );
     }
   };
 
-  // Delete handler
-  const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Are you sure you want to delete fixed cost "${name}"?`)) return;
+  // Confirm payment settlement from modal
+  const handleConfirmSettlement = async (
+    targetCost: FixedCostItem,
+    confirmedAmount: number,
+    paymentDate: string,
+    paymentNotes?: string
+  ) => {
+    // 1. Optimistic update in Redux
+    dispatch(
+      updateFixedCostPaymentInState({
+        id: targetCost.id,
+        isPaid: true,
+        paidAmount: confirmedAmount,
+        paidAt: new Date(paymentDate).toISOString(),
+      })
+    );
+
+    // 2. Call backend to record payment with actual amount
     try {
-      const res = await apiService.deleteFixedCost(id);
+      const res = await apiService.toggleFixedCostPaid(targetCost.id, {
+        monthYear: selectedMonth,
+        isPaid: true,
+        paidAmount: confirmedAmount,
+        notes: paymentNotes,
+      });
+
+      if (res.success && res.data) {
+        dispatch(
+          updateFixedCostPaymentInState({
+            id: targetCost.id,
+            isPaid: true,
+            paidAmount: res.data.paidAmount ?? confirmedAmount,
+            paidAt: res.data.paidAt ?? new Date(paymentDate).toISOString(),
+          })
+        );
+      }
+      loadHistoryData();
+    } catch (err) {
+      console.error('Failed to record fixed cost payment:', err);
+    }
+
+    // 3. Automatically record to Cash Flow Ledger
+    const txCategory = mapFixedCostCategoryToLedger(targetCost.category);
+    const newTx: TransactionItem = {
+      id: `tx-fixed-${targetCost.id}-${Date.now()}`,
+      title: targetCost.name,
+      type: 'expense',
+      amount: confirmedAmount,
+      category: txCategory,
+      date: paymentDate,
+      emotionalTrigger: 'Need',
+      isImpulse: false,
+    };
+
+    dispatch(addTransaction(newTx));
+
+    apiService
+      .createTransaction({
+        name: newTx.title,
+        type: 'expense',
+        amount: confirmedAmount,
+        category: txCategory,
+        date: paymentDate,
+        emotionalTrigger: 'Need',
+        isImpulse: false,
+        description: `Fixed Cost Settlement (${targetCost.name} - ${formattedMonthName})${
+          paymentNotes ? ` • ${paymentNotes}` : ''
+        }`,
+      })
+      .catch((err) => {
+        console.error('Failed to log fixed cost expense to Cash Flow Ledger:', err);
+      });
+  };
+
+  // Discontinue / End Bill or Permanent Delete handler
+  const handleDelete = async (cost: FixedCostItem) => {
+    // Offer 2 distinct lifecycle options:
+    // Option 1: End this bill after selectedMonth (Preserves history & current month, hides in future)
+    // Option 2: Delete permanently across all months (for mistakes/typos)
+    const isEndingBill = window.confirm(
+      `Manage lifecycle for "${cost.name}":\n\n` +
+      `• Click OK to END this bill after ${formattedMonthName}.\n` +
+      `  (Recommended: Keeps this month and past settlement history intact, but removes from future months).\n\n` +
+      `• Click Cancel if you want to permanently delete or cancel.`
+    );
+
+    if (isEndingBill) {
+      try {
+        await apiService.updateFixedCost(cost.id, {
+          endMonth: selectedMonth,
+        });
+        dispatch(
+          updateFixedCostInState({
+            id: cost.id,
+            endMonth: selectedMonth,
+          })
+        );
+        loadMonthData(selectedMonth);
+        loadHistoryData();
+      } catch (err) {
+        console.error('Failed to discontinue fixed cost:', err);
+      }
+      return;
+    }
+
+    // Secondary confirmation for permanent deletion
+    const isPermanent = window.confirm(
+      `Permanently DELETE "${cost.name}" across all past and future months?\n\nThis cannot be undone.`
+    );
+    if (!isPermanent) return;
+
+    try {
+      const res = await apiService.deleteFixedCost(cost.id);
       if (res.success) {
-        dispatch(removeFixedCost(id));
+        dispatch(removeFixedCost(cost.id));
         loadHistoryData();
       }
     } catch (err) {
@@ -307,8 +482,10 @@ export const FixedCostView: React.FC = () => {
   const totalObligation = fixedCosts.reduce((acc, c) => acc + c.amount, 0);
   const totalPaid = fixedCosts
     .filter((c) => c.isPaid)
-    .reduce((acc, c) => acc + (c.paidAmount || c.amount), 0);
-  const totalPending = Math.max(0, totalObligation - totalPaid);
+    .reduce((acc, c) => acc + (c.paidAmount && c.paidAmount > 0 ? c.paidAmount : c.amount), 0);
+  const totalPending = fixedCosts
+    .filter((c) => !c.isPaid)
+    .reduce((acc, c) => acc + c.amount, 0);
   const paidCount = fixedCosts.filter((c) => c.isPaid).length;
   const settlementRate =
     totalObligation > 0 ? Math.round((totalPaid / totalObligation) * 100) : 0;
@@ -414,14 +591,16 @@ export const FixedCostView: React.FC = () => {
 
             <button
               onClick={handleNextMonth}
-              title="Next Month"
+              disabled={isAtMaxMonth}
+              title={isAtMaxMonth ? 'Viewing limit: Up to 1 month ahead only' : 'Next Month'}
               style={{
                 padding: '6px',
                 borderRadius: 'var(--radius-sm)',
                 border: 'none',
                 background: 'transparent',
-                cursor: 'pointer',
-                color: 'var(--text-secondary)',
+                cursor: isAtMaxMonth ? 'not-allowed' : 'pointer',
+                color: isAtMaxMonth ? 'var(--text-muted)' : 'var(--text-secondary)',
+                opacity: isAtMaxMonth ? 0.35 : 1,
                 display: 'flex',
                 alignItems: 'center',
               }}
@@ -449,27 +628,6 @@ export const FixedCostView: React.FC = () => {
           )}
 
           <button
-            onClick={() => setShowHistoryDrawer(!showHistoryDrawer)}
-            style={{
-              padding: '7px 14px',
-              borderRadius: 'var(--radius-md)',
-              fontSize: '12px',
-              fontWeight: 700,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              cursor: 'pointer',
-              border: '1px solid var(--border-light)',
-              background: showHistoryDrawer ? 'var(--text-primary)' : '#FFFFFF',
-              color: showHistoryDrawer ? '#FFFFFF' : 'var(--text-secondary)',
-              transition: 'all 0.2s',
-            }}
-          >
-            <BarChart3 size={14} />
-            <span>6-Month Trend</span>
-          </button>
-
-          <button
             onClick={() => {
               setCostToEdit(null);
               setIsModalOpen(true);
@@ -483,115 +641,166 @@ export const FixedCostView: React.FC = () => {
         </div>
       </div>
 
-      {/* 6-Month Trend Drawer */}
-      {showHistoryDrawer && (
-        <div
-          className="glass"
-          style={{
-            padding: '20px 24px',
-            borderRadius: 'var(--radius-xl)',
-            background: '#FFFFFF',
-            border: '1px solid var(--border-light)',
-            boxShadow: 'var(--shadow-sm)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '14px',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <TrendingUp size={16} color="var(--primary)" />
-              <h3 style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--text-primary)' }}>
-                Historical Monthly Spending (Last 6 Months)
-              </h3>
-            </div>
+      {/* Historical Monthly Spending Card */}
+      <div
+        className="glass"
+        style={{
+          padding: '20px 24px',
+          borderRadius: 'var(--radius-xl)',
+          background: '#FFFFFF',
+          border: '1px solid var(--border-light)',
+          boxShadow: 'var(--shadow-sm)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <TrendingUp size={16} color="var(--primary)" />
+            <h3 style={{ fontSize: '12px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.6px', color: 'var(--text-primary)', margin: 0 }}>
+              Historical Monthly Spending ({historyTimeframe === '6M' ? 'Last 6 Months' : historyTimeframe === '1Y' ? 'Last 1 Year' : 'All Time'})
+            </h3>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
               Click any month to view details
             </span>
-          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px' }}>
-            {fixedCostHistory.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', gridColumn: '1 / -1' }}>
-                No historical records found yet.
-              </div>
-            ) : (
-              fixedCostHistory.map((hist) => {
-                const [hYear, hMonth] = hist.monthYear.split('-').map(Number);
-                const hDate = new Date(hYear, hMonth - 1, 1);
-                const hLabel = hDate.toLocaleDateString('en-US', {
-                  month: 'short',
-                  year: 'numeric',
-                });
-                const isSelected = hist.monthYear === selectedMonth;
-                const rate =
-                  hist.settlementRate ??
-                  (hist.totalObligation > 0
-                    ? Math.round((hist.totalPaid / hist.totalObligation) * 100)
-                    : 0);
-
+            {/* Timeframe Filter Pills */}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                background: 'rgba(0, 0, 0, 0.04)',
+                borderRadius: 'var(--radius-md)',
+                padding: '3px',
+                gap: '3px',
+              }}
+            >
+              {TIMEFRAME_OPTIONS.map((tf) => {
+                const isActive = historyTimeframe === tf.id;
                 return (
                   <button
-                    key={hist.monthYear}
-                    onClick={() => {
-                      dispatch(setSelectedMonth(hist.monthYear));
-                      loadMonthData(hist.monthYear);
-                    }}
+                    key={tf.id}
+                    onClick={() => handleTimeframeChange(tf.id)}
                     style={{
-                      padding: '12px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      textAlign: 'left',
+                      padding: '5px 12px',
+                      fontSize: '11px',
+                      fontWeight: isActive ? 700 : 500,
+                      color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
+                      background: isActive ? 'var(--primary)' : 'transparent',
+                      border: 'none',
+                      borderRadius: 'var(--radius-sm)',
                       cursor: 'pointer',
-                      border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-light)',
-                      background: isSelected ? 'var(--primary-light)' : '#FFFFFF',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '4px',
-                      transition: 'all 0.15s',
+                      transition: 'all 0.15s ease',
+                      whiteSpace: 'nowrap',
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {hLabel}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '10px',
-                          fontWeight: 800,
-                          padding: '2px 6px',
-                          borderRadius: '10px',
-                          background: rate === 100 ? 'rgba(5, 150, 105, 0.12)' : rate > 0 ? 'rgba(217, 119, 6, 0.12)' : 'rgba(0,0,0,0.06)',
-                          color: rate === 100 ? 'var(--emerald)' : rate > 0 ? '#D97706' : 'var(--text-muted)',
-                        }}
-                      >
-                        {rate}%
-                      </span>
-                    </div>
-
-                    <div className="tabular-nums" style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
-                      {formatRupiah(hist.totalPaid)}
-                    </div>
-                    <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                      of {formatRupiah(hist.totalObligation)}
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div style={{ width: '100%', height: '4px', background: 'rgba(0,0,0,0.06)', borderRadius: '999px', overflow: 'hidden', marginTop: '4px' }}>
-                      <div
-                        style={{
-                          width: `${rate}%`,
-                          height: '100%',
-                          background: rate === 100 ? 'var(--emerald)' : '#F59E0B',
-                        }}
-                      />
-                    </div>
+                    {tf.label}
                   </button>
                 );
-              })
-            )}
+              })}
+            </div>
           </div>
         </div>
-      )}
+
+        <div
+          ref={historyScrollRef}
+          style={{
+            display: 'flex',
+            gap: '10px',
+            overflowX: 'auto',
+            paddingBottom: '6px',
+            scrollbarWidth: 'thin',
+          }}
+        >
+          {fixedCostHistory.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px', width: '100%' }}>
+              No historical records found yet.
+            </div>
+          ) : (
+            fixedCostHistory.map((hist) => {
+              const [hYear, hMonth] = hist.monthYear.split('-').map(Number);
+              const hDate = new Date(hYear, hMonth - 1, 1);
+              const hLabel = hDate.toLocaleDateString('en-US', {
+                month: 'short',
+                year: 'numeric',
+              });
+              const isSelected = hist.monthYear === selectedMonth;
+              const rate =
+                hist.settlementRate ??
+                (hist.totalObligation > 0
+                  ? Math.round((hist.totalPaid / hist.totalObligation) * 100)
+                  : 0);
+
+              const isCompact = fixedCostHistory.length > 6;
+
+              return (
+                <button
+                  key={hist.monthYear}
+                  data-selected={isSelected ? 'true' : 'false'}
+                  onClick={() => {
+                    dispatch(setSelectedMonth(hist.monthYear));
+                    loadMonthData(hist.monthYear);
+                  }}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border-light)',
+                    background: isSelected ? 'var(--primary-light)' : '#FFFFFF',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                    transition: 'all 0.15s',
+                    flex: isCompact ? '0 0 155px' : '1 1 0',
+                    minWidth: '145px',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-primary)' }}>
+                      {hLabel}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: '10px',
+                        background: rate === 100 ? 'rgba(5, 150, 105, 0.12)' : rate > 0 ? 'rgba(217, 119, 6, 0.12)' : 'rgba(0,0,0,0.06)',
+                        color: rate === 100 ? 'var(--emerald)' : rate > 0 ? '#D97706' : 'var(--text-muted)',
+                      }}
+                    >
+                      {rate}%
+                    </span>
+                  </div>
+
+                  <div className="tabular-nums" style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
+                    {formatRupiah(hist.totalPaid)}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                    of {formatRupiah(hist.totalObligation)}
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div style={{ width: '100%', height: '4px', background: 'rgba(0,0,0,0.06)', borderRadius: '999px', overflow: 'hidden', marginTop: '4px' }}>
+                    <div
+                      style={{
+                        width: `${rate}%`,
+                        height: '100%',
+                        background: rate === 100 ? 'var(--emerald)' : '#F59E0B',
+                      }}
+                    />
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
 
       {/* Monthly Settlement Metric Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px' }}>
@@ -717,7 +926,7 @@ export const FixedCostView: React.FC = () => {
           </div>
           <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px' }}>
             {settlementRate === 100
-              ? '🎉 All fixed commitments fully settled for this month!'
+              ? 'All fixed commitments fully settled for this month!'
               : `${formatRupiah(totalPending)} left to clear all bills`}
           </p>
         </div>
@@ -1066,6 +1275,46 @@ export const FixedCostView: React.FC = () => {
                         <span>{meta.label}</span>
                       </span>
 
+                      {/* Lifecycle Status Badges */}
+                      {cost.endMonth === selectedMonth && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            color: 'var(--rose)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title="This bill will end after this month"
+                        >
+                          <AlertCircle size={11} />
+                          <span>Ends this month</span>
+                        </span>
+                      )}
+                      {cost.startMonth === selectedMonth && (
+                        <span
+                          style={{
+                            fontSize: '10px',
+                            fontWeight: 800,
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(99, 102, 241, 0.12)',
+                            color: '#6366F1',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                          title="This bill is newly active starting this month"
+                        >
+                          <Sparkles size={11} />
+                          <span>New this month</span>
+                        </span>
+                      )}
+
                       {/* Due Status Pill */}
                       {isDuePassed && (
                         <span
@@ -1134,15 +1383,76 @@ export const FixedCostView: React.FC = () => {
                         color: cost.isPaid ? 'var(--emerald)' : 'var(--text-primary)',
                       }}
                     >
-                      {formatRupiah(cost.amount)}
+                      {formatRupiah(
+                        cost.isPaid && cost.paidAmount && cost.paidAmount > 0
+                          ? cost.paidAmount
+                          : cost.amount
+                      )}
                     </div>
-                    <span style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: 800, color: 'var(--text-muted)' }}>
-                      {cost.isPaid ? 'Settled' : 'Unpaid'}
+                    {cost.isPaid &&
+                      cost.paidAmount &&
+                      cost.paidAmount > 0 &&
+                      cost.paidAmount !== cost.amount && (
+                        <div
+                          style={{
+                            fontSize: '10.5px',
+                            color: 'var(--text-muted)',
+                            fontWeight: 600,
+                            marginTop: '1px',
+                          }}
+                        >
+                          <span>Budget: {formatRupiah(cost.amount)} </span>
+                          {cost.paidAmount < cost.amount ? (
+                            <span style={{ color: 'var(--emerald)', fontWeight: 800 }}>
+                              (-{formatRupiah(cost.amount - cost.paidAmount)})
+                            </span>
+                          ) : (
+                            <span style={{ color: '#D97706', fontWeight: 800 }}>
+                              (+{formatRupiah(cost.paidAmount - cost.amount)})
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        textTransform: 'uppercase',
+                        fontWeight: 800,
+                        color: cost.isPaid ? 'var(--emerald)' : 'var(--text-muted)',
+                      }}
+                    >
+                      {cost.isPaid ? 'Settled (Paid)' : 'Budgeted / Unpaid'}
                     </span>
                   </div>
 
                   {/* Actions */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      onClick={() => setCostToReplace(cost)}
+                      title="Replace with new bill next month"
+                      style={{
+                        padding: '7px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid var(--border-light)',
+                        background: '#FFFFFF',
+                        cursor: 'pointer',
+                        color: '#6366F1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)';
+                        e.currentTarget.style.borderColor = '#6366F1';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = '#FFFFFF';
+                        e.currentTarget.style.borderColor = 'var(--border-light)';
+                      }}
+                    >
+                      <Repeat size={14} />
+                    </button>
                     <button
                       onClick={() => handleEdit(cost)}
                       title="Edit Fixed Cost"
@@ -1160,8 +1470,8 @@ export const FixedCostView: React.FC = () => {
                       <Edit2 size={14} />
                     </button>
                     <button
-                      onClick={() => handleDelete(cost.id, cost.name)}
-                      title="Delete Fixed Cost"
+                      onClick={() => handleDelete(cost)}
+                      title="Discontinue or Delete Fixed Cost"
                       style={{
                         padding: '7px',
                         borderRadius: 'var(--radius-sm)',
@@ -1193,6 +1503,31 @@ export const FixedCostView: React.FC = () => {
         }}
         costToEdit={costToEdit}
       />
+
+      {/* Settle / Confirm Payment Modal */}
+      {settlingCost && (
+        <ConfirmFixedCostPaymentModal
+          isOpen={Boolean(settlingCost)}
+          onClose={() => setSettlingCost(null)}
+          cost={settlingCost}
+          selectedMonth={selectedMonth}
+          onConfirm={handleConfirmSettlement}
+        />
+      )}
+
+      {/* Replace Fixed Cost Modal */}
+      {costToReplace && (
+        <ReplaceFixedCostModal
+          isOpen={Boolean(costToReplace)}
+          onClose={() => setCostToReplace(null)}
+          cost={costToReplace}
+          selectedMonth={selectedMonth}
+          onSuccess={() => {
+            loadMonthData(selectedMonth);
+            loadHistoryData();
+          }}
+        />
+      )}
     </div>
   );
 };

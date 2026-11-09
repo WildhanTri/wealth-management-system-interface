@@ -19,6 +19,7 @@ export interface CustomSelectProps<T extends string | number = string> {
   disabled?: boolean;
   style?: React.CSSProperties;
   id?: string;
+  alignMenu?: 'left' | 'right' | 'auto';
 }
 
 export const CustomSelect = <T extends string | number = string>({
@@ -31,12 +32,14 @@ export const CustomSelect = <T extends string | number = string>({
   disabled = false,
   style,
   id,
+  alignMenu = 'auto',
 }: CustomSelectProps<T>) => {
   const [isOpen, setIsOpen] = useState(false);
   const [openUpward, setOpenUpward] = useState(false);
+  const [alignRight, setAlignRight] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Detect available space to open upward if near viewport bottom
+  // Detect available space to open upward and/or align right
   useEffect(() => {
     if (isOpen && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
@@ -46,8 +49,21 @@ export const CustomSelect = <T extends string | number = string>({
       } else {
         setOpenUpward(false);
       }
+
+      if (alignMenu === 'right') {
+        setAlignRight(true);
+      } else if (alignMenu === 'left') {
+        setAlignRight(false);
+      } else {
+        const spaceRight = window.innerWidth - rect.right;
+        if (spaceRight < 200 || rect.left > window.innerWidth / 2) {
+          setAlignRight(true);
+        } else {
+          setAlignRight(false);
+        }
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, alignMenu]);
 
   // Normalize options
   const normalizedOptions: SelectOption<T>[] = options.map((opt) => {
@@ -215,8 +231,11 @@ export const CustomSelect = <T extends string | number = string>({
             position: 'absolute',
             top: openUpward ? 'auto' : 'calc(100% + 5px)',
             bottom: openUpward ? 'calc(100% + 5px)' : 'auto',
-            left: 0,
-            right: 0,
+            left: alignRight ? 'auto' : 0,
+            right: alignRight ? 0 : 'auto',
+            minWidth: '100%',
+            maxWidth: 'min(420px, calc(100vw - 32px))',
+            width: 'max-content',
             background: '#FFFFFF',
             borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border-light)',
@@ -227,6 +246,7 @@ export const CustomSelect = <T extends string | number = string>({
             overflowY: 'auto',
             padding: '5px',
             zIndex: 999,
+            boxSizing: 'border-box',
           }}
         >
           {normalizedOptions.map((opt) => {
@@ -259,7 +279,7 @@ export const CustomSelect = <T extends string | number = string>({
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
                   {opt.icon && (
-                    <span style={{ display: 'flex', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                       {opt.icon}
                     </span>
                   )}
@@ -270,6 +290,9 @@ export const CustomSelect = <T extends string | number = string>({
                           fontSize: '13px',
                           fontWeight: isSelected ? 700 : 500,
                           color: isSelected ? 'var(--primary)' : 'var(--text-primary)',
+                          whiteSpace: 'normal',
+                          wordBreak: 'break-word',
+                          lineHeight: 1.35,
                         }}
                       >
                         {opt.label}

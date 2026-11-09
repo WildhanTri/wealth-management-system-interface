@@ -230,7 +230,7 @@ export const AllocateTargetFundsModal: React.FC<AllocateTargetFundsModalProps> =
             <CurrencyInput
               value={amount}
               onChange={setAmount}
-              placeholder="Rp 0"
+              placeholder="0"
               prefix="Rp"
             />
           </div>

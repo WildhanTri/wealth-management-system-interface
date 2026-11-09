@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   Sparkles,
+  Zap,
   X,
 } from 'lucide-react';
 import { formatRupiah } from '../utils/financialCalculations';
@@ -365,8 +366,9 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                   marginTop: '8px',
                 }}
               >
-                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                  ⚡ Automated Life Energy Value Calculation
+                <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Zap size={13} />
+                  <span>Automated Life Energy Value Calculation</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
                   <div>
@@ -378,7 +380,7 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
                   <div>
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Debt-to-Income (DTI):</span>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: dti <= 30 ? 'var(--emerald)' : 'var(--rose)', fontFamily: 'Outfit, sans-serif' }}>
-                      {dti.toFixed(1)}% {dti <= 30 ? '✓ Healthy' : '⚠️ High'}
+                      {dti.toFixed(1)}% {dti <= 30 ? '(Healthy)' : '(High)'}
                     </div>
                   </div>
                 </div>

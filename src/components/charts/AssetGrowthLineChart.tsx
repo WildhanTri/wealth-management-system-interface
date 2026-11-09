@@ -1,17 +1,30 @@
 import React, { useState } from 'react';
 import { AssetSnapshot } from '../../types';
 import { formatRupiah } from '../../utils/financialCalculations';
-import { TrendingUp, TrendingDown, Sparkles, PlusCircle, Calendar } from 'lucide-react';
+import { TrendingUp, TrendingDown, PlusCircle, Calendar } from 'lucide-react';
+import { ChartTimeframe, formatCompactMetric } from './chartUtils';
+import { TimeframeSelector } from './TimeframeSelector';
 
 interface AssetGrowthLineChartProps {
   snapshots: AssetSnapshot[];
   onOpenSnapshotModal?: () => void;
+  getValue?: (snapshot: AssetSnapshot) => number;
+  filterLabel?: string;
+  title?: string;
+  subtitle?: string;
+  style?: React.CSSProperties;
 }
 
 export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
   snapshots,
   onOpenSnapshotModal,
+  getValue,
+  filterLabel,
+  title = 'Asset Growth Trajectory',
+  subtitle,
+  style,
 }) => {
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>('ALL');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   // Sort snapshots chronologically
@@ -21,28 +34,62 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
     return a.createdAt - b.createdAt;
   });
 
-  // Calculate overall growth
-  const count = sortedSnapshots.length;
-  const firstSnap = count > 0 ? sortedSnapshots[0] : null;
-  const latestSnap = count > 0 ? sortedSnapshots[count - 1] : null;
+  // Filter snapshots based on selected timeframe
+  const now = new Date();
+  const getFilteredSnapshots = () => {
+    if (sortedSnapshots.length === 0 || timeframe === 'ALL') return sortedSnapshots;
 
-  const initialWorth = firstSnap ? firstSnap.totalNetWorth : 0;
-  const currentWorth = latestSnap ? latestSnap.totalNetWorth : 0;
+    let cutoffDate = new Date();
+    if (timeframe === '7D') {
+      cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
+    } else if (timeframe === '1M') {
+      cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30);
+    } else if (timeframe === 'YTD') {
+      cutoffDate = new Date(now.getFullYear(), 0, 1);
+    } else if (timeframe === '1Y') {
+      cutoffDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    } else if (timeframe === '5Y') {
+      cutoffDate = new Date(now.getFullYear() - 5, now.getMonth(), now.getDate());
+    }
+
+    const cutoffISO = cutoffDate.toISOString().split('T')[0];
+    const inRange = sortedSnapshots.filter((s) => s.snapshotDate >= cutoffISO);
+
+    // If fewer than 2 snapshots exist in range, try to bring the latest prior snapshot as baseline anchor
+    if (inRange.length < 2) {
+      const prior = sortedSnapshots.filter((s) => s.snapshotDate < cutoffISO);
+      if (prior.length > 0) {
+        return [prior[prior.length - 1], ...inRange];
+      }
+    }
+
+    return inRange;
+  };
+
+  const activeSnapshots = getFilteredSnapshots();
+  const count = activeSnapshots.length;
+
+  const getVal = (s: AssetSnapshot) => (getValue ? getValue(s) : s.totalNetWorth);
+
+  const firstSnap = count > 0 ? activeSnapshots[0] : null;
+  const latestSnap = count > 0 ? activeSnapshots[count - 1] : null;
+
+  const initialWorth = firstSnap ? getVal(firstSnap) : 0;
+  const currentWorth = latestSnap ? getVal(latestSnap) : 0;
   const growthAmount = currentWorth - initialWorth;
-  const growthPercent =
-    initialWorth > 0 ? (growthAmount / initialWorth) * 100 : 0;
+  const growthPercent = initialWorth > 0 ? (growthAmount / initialWorth) * 100 : 0;
   const isPositiveGrowth = growthAmount >= 0;
 
   // Chart coordinate parameters
-  const chartWidth = 320;
+  const chartWidth = 360;
   const chartHeight = 140;
-  const paddingX = 24;
+  const paddingLeft = 18;
+  const paddingRight = 52;
   const paddingTop = 22;
   const paddingBottom = 30;
-  const availableWidth = chartWidth - paddingX * 2;
+  const availableWidth = chartWidth - paddingLeft - paddingRight;
   const availableHeight = chartHeight - paddingTop - paddingBottom;
 
-  // Helper date formatter: "Oct 30"
   const monthNamesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const formatShortDate = (isoStr: string) => {
     try {
@@ -58,8 +105,8 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
     }
   };
 
-  // If empty
-  if (count === 0) {
+  // Empty state if no snapshots exist anywhere
+  if (sortedSnapshots.length === 0) {
     return (
       <div
         className="glass"
@@ -123,8 +170,8 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
     );
   }
 
-  // Calculate coordinates
-  const values = sortedSnapshots.map((s) => s.totalNetWorth);
+  // Calculate SVG coordinates
+  const values = activeSnapshots.map(getVal);
   let minVal = Math.min(...values);
   let maxVal = Math.max(...values);
 
@@ -132,7 +179,6 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
     minVal = Math.max(0, minVal * 0.9);
     maxVal = maxVal * 1.1 || 1000000;
   } else {
-    // Add 10% breathing room top and bottom
     const range = maxVal - minVal;
     minVal = Math.max(0, minVal - range * 0.1);
     maxVal = maxVal + range * 0.1;
@@ -140,12 +186,12 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
 
   const valRange = maxVal - minVal || 1;
 
-  const points = sortedSnapshots.map((s, idx) => {
+  const points = activeSnapshots.map((s, idx) => {
     const x =
       count === 1
-        ? chartWidth / 2
-        : paddingX + (idx / (count - 1)) * availableWidth;
-    const y = paddingTop + availableHeight - ((s.totalNetWorth - minVal) / valRange) * availableHeight;
+        ? paddingLeft + availableWidth / 2
+        : paddingLeft + (idx / (count - 1)) * availableWidth;
+    const y = paddingTop + availableHeight - ((getVal(s) - minVal) / valRange) * availableHeight;
     return { x, y, snapshot: s, index: idx };
   });
 
@@ -155,20 +201,18 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
 
   if (points.length === 1) {
     linePath = `M ${points[0].x - 30},${points[0].y} L ${points[0].x + 30},${points[0].y}`;
-  } else {
-    // Construct smooth or segmented line
+  } else if (points.length > 1) {
     linePath = points.reduce((acc, pt, i) => {
       return i === 0 ? `M ${pt.x},${pt.y}` : `${acc} L ${pt.x},${pt.y}`;
     }, '');
 
-    // Area under curve
     const firstPt = points[0];
     const lastPt = points[points.length - 1];
     const bottomY = paddingTop + availableHeight;
     areaPath = `${linePath} L ${lastPt.x},${bottomY} L ${firstPt.x},${bottomY} Z`;
   }
 
-  const activePoint = hoveredIndex !== null ? points[hoveredIndex] : points[points.length - 1];
+  const activePoint = hoveredIndex !== null && points[hoveredIndex] ? points[hoveredIndex] : points[points.length - 1];
 
   return (
     <div
@@ -182,10 +226,11 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
+        ...style,
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div
@@ -202,42 +247,60 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
             >
               <TrendingUp size={15} />
             </div>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-              Asset Growth Trajectory
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
+              {title}
             </h3>
+            {filterLabel && (
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  padding: '2px 8px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--primary-light)',
+                  color: 'var(--primary)',
+                  border: '1px solid var(--border-subtle)',
+                }}
+              >
+                {filterLabel}
+              </span>
+            )}
           </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {count} valuation points logged
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', marginBottom: 0 }}>
+            {subtitle || `${count} valuation points in ${timeframe}`}
           </p>
         </div>
 
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)' }}>
-            {formatRupiah(activePoint.snapshot.totalNetWorth)}
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '1px' }}>
-            {count > 1 ? (
-              <span
-                style={{
-                  fontSize: '10.5px',
-                  fontWeight: 700,
-                  color: isPositiveGrowth ? 'var(--emerald)' : 'var(--rose)',
-                  background: isPositiveGrowth ? 'var(--emerald-light)' : 'var(--rose-light)',
-                  padding: '1px 6px',
-                  borderRadius: '4px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                }}
-              >
-                {isPositiveGrowth ? '+' : ''}
-                {growthPercent.toFixed(1)}% ({isPositiveGrowth ? '+' : ''}{formatRupiah(growthAmount)})
-              </span>
-            ) : (
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                Initial Baseline
-              </span>
-            )}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+          <TimeframeSelector value={timeframe} onChange={setTimeframe} size="sm" />
+          <div style={{ textAlign: 'right', marginTop: '2px' }}>
+            <div style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--text-primary)' }} className="tabular-nums">
+              {activePoint ? formatRupiah(getVal(activePoint.snapshot)) : formatRupiah(currentWorth)}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '1px' }}>
+              {count > 1 ? (
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    color: isPositiveGrowth ? 'var(--emerald)' : 'var(--rose)',
+                    background: isPositiveGrowth ? 'var(--emerald-light)' : 'var(--rose-light)',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '2px',
+                  }}
+                >
+                  {isPositiveGrowth ? '+' : ''}
+                  {growthPercent.toFixed(1)}% ({isPositiveGrowth ? '+' : ''}{formatRupiah(growthAmount)})
+                </span>
+              ) : (
+                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                  Baseline valuation
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -259,24 +322,65 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
             </filter>
           </defs>
 
-          {/* Subtle horizontal baseline & guideline */}
+          {/* Horizontal grid lines with right-aligned metric values */}
           <line
-            x1={paddingX}
-            y1={paddingTop + availableHeight}
-            x2={chartWidth - paddingX}
-            y2={paddingTop + availableHeight}
-            stroke="#E2ECE5"
+            x1={paddingLeft}
+            y1={paddingTop}
+            x2={chartWidth - paddingRight}
+            y2={paddingTop}
+            stroke="#F0F4F1"
+            strokeDasharray="3 3"
             strokeWidth="1"
           />
+          <text
+            x={chartWidth - 4}
+            y={paddingTop + 3.5}
+            textAnchor="end"
+            fill="var(--text-muted)"
+            fontSize="8.5"
+            fontWeight="600"
+          >
+            {formatCompactMetric(maxVal)}
+          </text>
+
           <line
-            x1={paddingX}
+            x1={paddingLeft}
             y1={paddingTop + availableHeight / 2}
-            x2={chartWidth - paddingX}
+            x2={chartWidth - paddingRight}
             y2={paddingTop + availableHeight / 2}
             stroke="#F0F4F1"
             strokeDasharray="3 3"
             strokeWidth="1"
           />
+          <text
+            x={chartWidth - 4}
+            y={paddingTop + availableHeight / 2 + 3.5}
+            textAnchor="end"
+            fill="var(--text-muted)"
+            fontSize="8.5"
+            fontWeight="600"
+          >
+            {formatCompactMetric((maxVal + minVal) / 2)}
+          </text>
+
+          <line
+            x1={paddingLeft}
+            y1={paddingTop + availableHeight}
+            x2={chartWidth - paddingRight}
+            y2={paddingTop + availableHeight}
+            stroke="#E2ECE5"
+            strokeWidth="1"
+          />
+          <text
+            x={chartWidth - 4}
+            y={paddingTop + availableHeight + 3.5}
+            textAnchor="end"
+            fill="var(--text-muted)"
+            fontSize="8.5"
+            fontWeight="600"
+          >
+            {formatCompactMetric(minVal)}
+          </text>
 
           {/* Gradient Area Fill */}
           {areaPath && (
@@ -370,43 +474,45 @@ export const AssetGrowthLineChart: React.FC<AssetGrowthLineChartProps> = ({
       </div>
 
       {/* Active Point Note or Tip */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          background: 'var(--bg-chip)',
-          padding: '8px 12px',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: '11px',
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-          <Calendar size={13} color="var(--primary)" />
-          <span style={{ fontWeight: 600 }}>{activePoint.snapshot.snapshotDate}:</span>
-          <span style={{ color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            {activePoint.snapshot.notes || 'Portfolio valuation'}
-          </span>
+      {activePoint && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            background: 'var(--bg-chip)',
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: '11px',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+            <Calendar size={13} color="var(--primary)" />
+            <span style={{ fontWeight: 600 }}>{activePoint.snapshot.snapshotDate}:</span>
+            <span style={{ color: 'var(--text-muted)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              {activePoint.snapshot.notes || 'Portfolio valuation'}
+            </span>
+          </div>
+          {onOpenSnapshotModal && (
+            <button
+              onClick={onOpenSnapshotModal}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--primary)',
+                fontWeight: 700,
+                fontSize: '10.5px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                marginLeft: '8px',
+              }}
+            >
+              + Update Valuation
+            </button>
+          )}
         </div>
-        {onOpenSnapshotModal && (
-          <button
-            onClick={onOpenSnapshotModal}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--primary)',
-              fontWeight: 700,
-              fontSize: '10.5px',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              marginLeft: '8px',
-            }}
-          >
-            + Update Valuation
-          </button>
-        )}
-      </div>
+      )}
     </div>
   );
 };

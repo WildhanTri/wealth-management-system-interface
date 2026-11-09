@@ -1,62 +1,67 @@
 import React, { useState } from 'react';
 import { TransactionItem } from '../../types';
 import { formatRupiah } from '../../utils/financialCalculations';
-import { BarChart3, TrendingDown, ArrowUpRight } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
+import {
+  ChartTimeframe,
+  generateBucketsForTimeframe,
+  normalizeDateToISO,
+  isDateInBucket,
+  formatCompactMetric,
+} from './chartUtils';
+import { TimeframeSelector } from './TimeframeSelector';
 
 interface ExpenseBarChartProps {
   transactions: TransactionItem[];
 }
 
 export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }) => {
+  const [timeframe, setTimeframe] = useState<ChartTimeframe>('7D');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  // Generate the last 7 days (including today)
-  const daysCount = 7;
-  const now = new Date();
-  const dayBuckets: { dateStr: string; label: string; dayName: string; total: number }[] = [];
-
-  const dayNamesEn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const monthNamesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-  for (let i = daysCount - 1; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    const dateStr = d.toISOString().split('T')[0];
-    const isToday = i === 0;
-    const isYesterday = i === 1;
-
-    let dayLabel = `${monthNamesEn[d.getMonth()]} ${d.getDate()}`;
-    if (isToday) dayLabel = 'Today';
-    else if (isYesterday) dayLabel = 'Yesterday';
-
-    dayBuckets.push({
-      dateStr,
-      label: dayLabel,
-      dayName: dayNamesEn[d.getDay()],
-      total: 0,
-    });
-  }
+  const allTxDates = transactions.map((t) => t.date);
+  const buckets = generateBucketsForTimeframe(timeframe, allTxDates);
 
   // Populate totals from transactions (outflows only)
-  transactions.forEach((tx) => {
-    if (tx.type === 'income') return;
-    const bucket = dayBuckets.find((b) => b.dateStr === tx.date);
-    if (bucket) {
-      bucket.total += tx.amount;
-    }
+  const dayBuckets = buckets.map((bucket) => {
+    let total = 0;
+    let count = 0;
+
+    transactions.forEach((tx) => {
+      if (tx.type === 'income') return;
+      const iso = normalizeDateToISO(tx.date);
+      if (isDateInBucket(iso, bucket.key)) {
+        total += Number(tx.amount) || 0;
+        count++;
+      }
+    });
+
+    return {
+      ...bucket,
+      total,
+      count,
+    };
   });
 
-  const totalSpent7Days = dayBuckets.reduce((sum, b) => sum + b.total, 0);
-  const avgDaily = Math.round(totalSpent7Days / daysCount);
+  const totalSpentPeriod = dayBuckets.reduce((sum, b) => sum + b.total, 0);
+  const bucketCount = dayBuckets.length;
+  const avgPerBucket = bucketCount > 0 ? Math.round(totalSpentPeriod / bucketCount) : 0;
   const maxSpend = Math.max(...dayBuckets.map((b) => b.total), 50000); // minimum scale Rp 50.000
 
   // Chart dimensions in SVG viewBox coordinate space
-  const chartWidth = 320;
-  const chartHeight = 130;
+  const chartWidth = 360;
+  const chartHeight = 135;
   const topPadding = 18;
   const bottomPadding = 26;
+  const paddingLeft = 10;
+  const paddingRight = 50;
+  const availableWidth = chartWidth - paddingLeft - paddingRight;
   const availableHeight = chartHeight - topPadding - bottomPadding;
-  const colWidth = chartWidth / daysCount;
-  const barWidth = 24;
+  const colWidth = availableWidth / bucketCount;
+
+  // Dynamic bar width
+  const calculatedBarWidth = bucketCount <= 7 ? 22 : bucketCount <= 12 ? 14 : bucketCount <= 20 ? 8 : 5;
+  const barWidth = Math.max(3, Math.min(colWidth - 2, calculatedBarWidth));
 
   const activeBucket = hoveredIndex !== null ? dayBuckets[hoveredIndex] : null;
 
@@ -75,7 +80,7 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <div
@@ -92,21 +97,24 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
             >
               <BarChart3 size={15} />
             </div>
-            <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+            <h3 style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
               Expense Outflow Trend
             </h3>
           </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-            Activity over the past 7 days
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px', marginBottom: 0 }}>
+            Daily expense activity over {timeframe}
           </p>
         </div>
 
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)' }} className="tabular-nums">
-            {activeBucket ? formatRupiah(activeBucket.total) : formatRupiah(totalSpent7Days)}
-          </div>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-            {activeBucket ? activeBucket.label : `Daily Average: ${formatRupiah(avgDaily)}/day`}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+          <TimeframeSelector value={timeframe} onChange={setTimeframe} size="sm" />
+          <div style={{ textAlign: 'right', marginTop: '2px' }}>
+            <div style={{ fontSize: '14.5px', fontWeight: 800, color: 'var(--rose)' }} className="tabular-nums">
+              -{formatRupiah(activeBucket ? activeBucket.total : totalSpentPeriod)}
+            </div>
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+              {activeBucket ? activeBucket.fullLabel : `Average: ${formatRupiah(avgPerBucket)}/interval`}
+            </div>
           </div>
         </div>
       </div>
@@ -128,37 +136,70 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
             </linearGradient>
           </defs>
 
-          {/* Subtle horizontal grid lines */}
+          {/* Horizontal grid lines with right-aligned metric values */}
           <line
-            x1="0"
+            x1={paddingLeft}
             y1={topPadding}
-            x2={chartWidth}
+            x2={chartWidth - paddingRight}
             y2={topPadding}
             stroke="#F0F4F1"
             strokeDasharray="3 3"
             strokeWidth="1"
           />
+          <text
+            x={chartWidth - 4}
+            y={topPadding + 3.5}
+            textAnchor="end"
+            fill="var(--text-muted)"
+            fontSize="8.5"
+            fontWeight="600"
+          >
+            {formatCompactMetric(maxSpend)}
+          </text>
+
           <line
-            x1="0"
+            x1={paddingLeft}
             y1={topPadding + availableHeight / 2}
-            x2={chartWidth}
+            x2={chartWidth - paddingRight}
             y2={topPadding + availableHeight / 2}
             stroke="#F0F4F1"
             strokeDasharray="3 3"
             strokeWidth="1"
           />
+          <text
+            x={chartWidth - 4}
+            y={topPadding + availableHeight / 2 + 3.5}
+            textAnchor="end"
+            fill="var(--text-muted)"
+            fontSize="8.5"
+            fontWeight="600"
+          >
+            {formatCompactMetric(maxSpend / 2)}
+          </text>
+
           <line
-            x1="0"
+            x1={paddingLeft}
             y1={topPadding + availableHeight}
-            x2={chartWidth}
+            x2={chartWidth - paddingRight}
             y2={topPadding + availableHeight}
             stroke="#E2ECE5"
             strokeWidth="1"
           />
+          <text
+            x={chartWidth - 4}
+            y={topPadding + availableHeight + 3.5}
+            textAnchor="end"
+            fill="var(--text-muted)"
+            fontSize="8.5"
+            fontWeight="600"
+          >
+            0
+          </text>
 
           {/* Render Bars */}
           {dayBuckets.map((bucket, idx) => {
-            const x = idx * colWidth + (colWidth - barWidth) / 2;
+            const colX = paddingLeft + idx * colWidth;
+            const x = colX + (colWidth - barWidth) / 2;
             const barHeight =
               bucket.total > 0
                 ? Math.max(6, (bucket.total / maxSpend) * availableHeight)
@@ -168,14 +209,14 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
 
             return (
               <g
-                key={bucket.dateStr}
+                key={bucket.key}
                 style={{ cursor: 'pointer' }}
                 onMouseEnter={() => setHoveredIndex(idx)}
                 onMouseLeave={() => setHoveredIndex(null)}
               >
                 {/* Invisible hover target area for easy touch/mouse */}
                 <rect
-                  x={idx * colWidth}
+                  x={colX}
                   y={0}
                   width={colWidth}
                   height={chartHeight}
@@ -185,11 +226,11 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
                 {/* Column background hover highlight */}
                 {isHovered && (
                   <rect
-                    x={idx * colWidth + 2}
+                    x={colX + 1}
                     y={topPadding - 4}
-                    width={colWidth - 4}
+                    width={colWidth - 2}
                     height={availableHeight + 8}
-                    rx="6"
+                    rx="5"
                     fill="rgba(72, 176, 125, 0.08)"
                   />
                 )}
@@ -200,7 +241,7 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
                   y={y}
                   width={barWidth}
                   height={barHeight}
-                  rx={bucket.total > 0 ? 5 : 2}
+                  rx={bucket.total > 0 ? 4 : 1.5}
                   fill={
                     bucket.total === 0
                       ? '#E2ECE5'
@@ -214,7 +255,7 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
                   }}
                 />
 
-                {/* Value on top of bar if active or prominent */}
+                {/* Value on top of bar if active */}
                 {isHovered && bucket.total > 0 && (
                   <text
                     x={x + barWidth / 2}
@@ -232,24 +273,26 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
                   </text>
                 )}
 
-                {/* Day name label below */}
-                <text
-                  x={x + barWidth / 2}
-                  y={chartHeight - 8}
-                  textAnchor="middle"
-                  fill={isHovered ? 'var(--primary)' : 'var(--text-muted)'}
-                  fontSize="9.5"
-                  fontWeight={isHovered ? '700' : '500'}
-                >
-                  {bucket.dayName}
-                </text>
+                {/* Label below */}
+                {bucket.showLabelOnAxis && (
+                  <text
+                    x={x + barWidth / 2}
+                    y={chartHeight - 8}
+                    textAnchor="middle"
+                    fill={isHovered ? 'var(--primary)' : 'var(--text-muted)'}
+                    fontSize="9"
+                    fontWeight={isHovered ? '800' : '500'}
+                  >
+                    {bucket.label}
+                  </text>
+                )}
               </g>
             );
           })}
         </svg>
       </div>
 
-      {totalSpent7Days === 0 && (
+      {totalSpentPeriod === 0 && (
         <div
           style={{
             textAlign: 'center',
@@ -258,7 +301,7 @@ export const ExpenseBarChart: React.FC<ExpenseBarChartProps> = ({ transactions }
             padding: '4px',
           }}
         >
-          No expenses recorded in the past 7 days.
+          No expenses recorded in {timeframe}.
         </div>
       )}
     </div>

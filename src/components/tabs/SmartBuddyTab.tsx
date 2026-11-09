@@ -5,7 +5,7 @@ import { addToQuarantine, cancelImpulseItem, confirmPurchaseItem } from '../../s
 import { addTransaction } from '../../store/slices/transactionSlice';
 import { apiService } from '../../services/apiService';
 import confetti from 'canvas-confetti';
-import { Sparkles, Clock, AlertCircle, CheckCircle2, HelpCircle, ArrowRight, Check } from 'lucide-react';
+import { Sparkles, Clock, AlertCircle, CheckCircle2, HelpCircle, ArrowRight, Check, Lightbulb } from 'lucide-react';
 import { QuarantineItem, TransactionItem } from '../../types';
 import { CustomSelect } from '../CustomSelect';
 import { CurrencyInput } from '../CurrencyInput';
@@ -71,7 +71,7 @@ export const SmartBuddyTab: React.FC = () => {
     const fakeId = `calc-${Date.now()}`;
     dispatch(cancelImpulseItem({ id: fakeId, savedAmount: priceNum }));
 
-    setSuccessMessage(`Great job! You decided against buying "${itemName}" and preserved ${formatRupiah(priceNum)} to your Saved Wealth Jar! 🎉`);
+    setSuccessMessage(`Great job! You decided against buying "${itemName}" and preserved ${formatRupiah(priceNum)} to your Saved Wealth Jar!`);
     setItemName('');
     setItemPrice('');
     setTimeout(() => setSuccessMessage(null), 4500);
@@ -248,7 +248,7 @@ export const SmartBuddyTab: React.FC = () => {
                 gap: '8px',
               }}
             >
-              <span>💡</span>
+              <Lightbulb size={16} color="var(--primary)" />
               <span>Evaluate Purchase Feasibility</span>
             </h3>
 
@@ -418,8 +418,9 @@ export const SmartBuddyTab: React.FC = () => {
                 >
                   <div>
                     <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Sweat Working Hours:</span>
-                    <div className="tabular-nums" style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px' }}>
-                      ⏳ {workHoursCost} Work Hours
+                    <div className="tabular-nums" style={{ fontSize: '16px', fontWeight: 800, color: 'var(--text-primary)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Clock size={15} color="var(--primary)" />
+                      <span>{workHoursCost} Work Hours</span>
                     </div>
                     <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
                       Equates to ~{(workHoursCost / 8).toFixed(1)} full workdays

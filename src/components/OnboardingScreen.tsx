@@ -306,7 +306,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
                 }}
                 className="tabular-nums"
               >
-                {dti.toFixed(1)}% {dti <= 30 ? '(✓ Healthy)' : '(⚠️ High)'}
+                {dti.toFixed(1)}% {dti <= 30 ? '(Healthy)' : '(High)'}
               </div>
             </div>
 
@@ -397,9 +397,15 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
                   fontSize: '12.5px',
                   color: 'var(--text-secondary)',
                   lineHeight: '1.5',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
                 }}
               >
-                👋 <strong>Welcome to Crescent Wealth Management System!</strong> Complete this quick setup to calibrate your personal wealth dashboard and financial health score.
+                <Sparkles size={16} color="var(--primary)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div>
+                  <strong>Welcome to Crescent Wealth Management System!</strong> Complete this quick setup to calibrate your personal wealth dashboard and financial health score.
+                </div>
               </div>
 
               <div>
@@ -594,7 +600,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onFinish }) 
                   <div>
                     <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Debt-to-Income (DTI):</span>
                     <div style={{ fontSize: '18px', fontWeight: 800, color: dti <= 30 ? 'var(--emerald)' : 'var(--rose)', marginTop: '2px' }} className="tabular-nums">
-                      {dti.toFixed(1)}% {dti <= 30 ? '✓ Healthy' : '⚠️ Elevated'}
+                      {dti.toFixed(1)}% {dti <= 30 ? '(Healthy)' : '(Elevated)'}
                     </div>
                     <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>Healthy threshold is ≤ 30%</span>
                   </div>

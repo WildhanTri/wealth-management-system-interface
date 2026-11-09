@@ -30,6 +30,7 @@ import {
   ChevronDown,
   TrendingUp,
   CalendarCheck,
+  Calendar,
   Target,
   CreditCard,
 } from 'lucide-react';
@@ -301,41 +302,6 @@ export function App() {
     );
   }
 
-  // Active plans count
-  const activePlansCount = plans.filter((p) => p.status === 'active').length;
-
-  // Header Titles
-  const getTabHeader = () => {
-    switch (activeTab) {
-      case 'Beranda':
-        return {
-          title: 'Financial Command Center',
-          subtitle: 'Real-Time Financial Radar & Health Assessment',
-        };
-      case 'Transaksi':
-        return {
-          title: 'Cash Flow & Planned Expenses',
-          subtitle: 'Expense Tracking, Emotional Velocity & Sinking Funds',
-        };
-      case 'Planning':
-        return {
-          title: 'Financial Planning & Targets',
-          subtitle: 'Revenue Streams, Monthly Fixed Commitments & Wealth Milestones',
-        };
-      case 'Asset':
-        return {
-          title: 'Wealth Hierarchy & Asset Portfolio',
-          subtitle: '3-Tier Liquidity Structure & Periodic Valuation History',
-        };
-      case 'Profile':
-        return {
-          title: 'Financial Profile & Discipline',
-          subtitle: 'Impulse Guard Jar, Work-Hour Equivalent & Achievements',
-        };
-    }
-  };
-
-  const currentHeader = getTabHeader();
 
   // 3. Main Desktop Application (After Onboarding is Completed)
   return (
@@ -386,10 +352,7 @@ export function App() {
               className={`sidebar-nav-item ${activeTab === 'Transaksi' ? 'active' : ''}`}
             >
               <ArrowUpDown size={18} />
-              <span className="sidebar-label">Cash Flow & Plans</span>
-              {activePlansCount > 0 && (
-                <span className="sidebar-nav-badge">{activePlansCount}</span>
-              )}
+              <span className="sidebar-label">Cash Flow Ledger</span>
             </button>
 
             {/* Financial Planning Parent Item with Dropdown Accordion */}
@@ -612,9 +575,16 @@ export function App() {
       {/* 2. STICKY TOPBAR HEADER                                                   */}
       {/* ========================================================================= */}
       <header className="app-topbar">
-        <div className="topbar-title-section">
-          <span className="topbar-subtitle">{currentHeader.subtitle}</span>
-          <h1 className="topbar-title">{currentHeader.title}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
+          <Calendar size={14} color="var(--primary)" />
+          <span>
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })}
+          </span>
         </div>
 
         <div className="topbar-actions-section">

@@ -140,6 +140,7 @@ export const apiService = {
         date: t.date,
         emotionalTrigger: t.emotional_trigger || t.emotionalTrigger || 'Need',
         isImpulse: Boolean(t.is_impulse ?? t.isImpulse),
+        displayOrder: Number(t.display_order ?? t.displayOrder) || 0,
       }));
     }
     return res as ApiResponse<TransactionItem[]>;
@@ -158,7 +159,13 @@ export const apiService = {
       method: 'POST',
       body: JSON.stringify(tx),
     }),
-  updateTransaction: (id: string, tx: Partial<TransactionItem>) =>
+  updateTransaction: (
+    id: string,
+    tx: Partial<TransactionItem> & {
+      name?: string;
+      description?: string;
+    }
+  ) =>
     request<TransactionItem>(`/transactions/${id}`, {
       method: 'PUT',
       body: JSON.stringify(tx),
@@ -166,6 +173,11 @@ export const apiService = {
   deleteTransaction: (id: string) =>
     request(`/transactions/${id}`, {
       method: 'DELETE',
+    }),
+  reorderTransactions: (transactionIds: string[]) =>
+    request('/transactions/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ transactionIds }),
     }),
 
   // Planned Expenses
@@ -388,6 +400,8 @@ export const apiService = {
     if (res.data && Array.isArray(res.data)) {
       res.data = res.data.map((f: any) => ({
         ...f,
+        startMonth: f.startMonth ?? f.start_month ?? null,
+        endMonth: f.endMonth ?? f.end_month ?? null,
         amount: Number(f.amount) || 0,
         dueDay: Number(f.dueDay ?? f.due_day) || 1,
         paidAmount: Number(f.paidAmount ?? f.paid_amount) || 0,
@@ -445,8 +459,8 @@ export const apiService = {
     }
     return res;
   },
-  getFixedCostHistory: (months?: number) =>
-    request<FixedCostHistoryItem[]>(`/fixed-costs/history${months ? `?months=${months}` : ''}`),
+  getFixedCostHistory: (months?: number | string) =>
+    request<FixedCostHistoryItem[]>(`/fixed-costs/history${months !== undefined ? `?months=${months}` : ''}`),
   reorderFixedCosts: (costIds: string[]) =>
     request('/fixed-costs/reorder', {
       method: 'POST',
@@ -454,12 +468,20 @@ export const apiService = {
     }),
 
   // Financial Targets
-  getFinancialTargets: async (params?: { category?: string; priority?: string; status?: string }) => {
+  getFinancialTargets: async (params?: {
+    category?: string;
+    priority?: string;
+    status?: string;
+    targetType?: string;
+    timeframe?: string;
+  }) => {
     const q = new URLSearchParams(params as any).toString();
     const res = await request<FinancialTargetItem[]>(`/financial-targets${q ? `?${q}` : ''}`);
     if (res.data && Array.isArray(res.data)) {
       res.data = res.data.map((t: any) => ({
         ...t,
+        targetType: t.targetType || t.target_type || 'needs',
+        timeframe: t.timeframe || 'short_term',
         targetAmount: Number(t.targetAmount || t.target_amount) || 0,
         currentAmount: Number(t.currentAmount || t.current_amount) || 0,
         remainingAmount: Number(t.remainingAmount) || 0,
@@ -479,6 +501,8 @@ export const apiService = {
     if (res.data) {
       res.data = {
         ...res.data,
+        targetType: res.data.targetType || (res.data as any).target_type || 'needs',
+        timeframe: res.data.timeframe || (res.data as any).timeframe || 'short_term',
         targetAmount: Number(res.data.targetAmount || (res.data as any).target_amount) || 0,
         currentAmount: Number(res.data.currentAmount || (res.data as any).current_amount) || 0,
         remainingAmount: Number(res.data.remainingAmount) || 0,
@@ -498,6 +522,8 @@ export const apiService = {
     if (res.data) {
       res.data = {
         ...res.data,
+        targetType: res.data.targetType || (res.data as any).target_type || 'needs',
+        timeframe: res.data.timeframe || (res.data as any).timeframe || 'short_term',
         targetAmount: Number(res.data.targetAmount || (res.data as any).target_amount) || 0,
         currentAmount: Number(res.data.currentAmount || (res.data as any).current_amount) || 0,
         remainingAmount: Number(res.data.remainingAmount) || 0,
